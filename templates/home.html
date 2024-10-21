@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Health Bot UI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Body Styling */
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f0f4f7, #c1e1f5);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #333;
+        }
+
+        /* Container Styling */
+        .container {
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            text-align: left;
+        }
+
+        /* Header Styling */
+        h1 {
+            color: #2d99d1;
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        /* Button Styling */
+        button {
+            background-color: #2d99d1;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1.1em;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+
+        button:hover {
+            background-color: #2578a8;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        /* Text Styling */
+        p {
+            font-size: 1.2em;
+            margin: 20px 0;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        #recognized-text, #bot-response {
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-stethoscope"></i> Health Bot</h1>
+        <button id="start-speech">Let's Talk Health!</button>
+        <button id="stop-speech">Pause</button>
+        <p>Recognized Text: <span id="recognized-text">Waiting...</span></p>
+        <p>Bot Response: <span id="bot-response">Awaiting response...</span></p>
+    </div>
+
+    <script>
+        let isListening = false;
+        let isPaused = false;
+        let currentUtterance = null;
+        let spokenLength = 0;  // Tracks how much has been spoken
+
+        // Start interaction
+        document.getElementById('start-speech').onclick = function() {
+            if (!isListening) {
+                isListening = true;
+                handleContinuousInteraction();
+            } else if (isPaused && currentUtterance) {
+                isPaused = false;
+                speakText(currentUtterance.text.slice(spokenLength));  // Resume from remaining part
+            }
+        };
+
+        // Pause speech
+        document.getElementById('stop-speech').onclick = function() {
+            if (window.speechSynthesis.speaking && !isPaused) {
+                window.speechSynthesis.cancel();
+                isPaused = true;
+            }
+        };
+
+        function handleContinuousInteraction() {
+            // Step 1: Capture user speech and convert it to text
+            fetch('/speech-to-text', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    const recognizedText = data.text;
+                    document.getElementById('recognized-text').innerText = recognizedText;
+
+                    // Step 2: Fetch health information based on recognized text
+                    return fetch('/get-health-info', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: recognizedText })
+                    });
+                })
+                .then(response => response.json())
+                .then(data => {
+                    const botResponse = data.response;
+                    document.getElementById('bot-response').innerText = botResponse;
+
+                    // Step 3: Convert bot response to speech and speak it out using SpeechSynthesis
+                    spokenLength = 0; // Reset spoken length
+                    speakText(botResponse);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    isListening = false; // Stop the loop if an error occurs
+                });
+        }
+
+        function speakText(text) {
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel(); // Cancel any ongoing speech
+            }
+
+            currentUtterance = new SpeechSynthesisUtterance(text);
+
+            // Event listener to track how much text has been spoken
+            currentUtterance.onboundary = function(event) {
+                if (event.name === "word") {
+                    spokenLength = event.charIndex;  // Track how many characters have been spoken
+                }
+            };
+
+            // Handle pause and resume logic
+            currentUtterance.onend = () => {
+                if (isListening && !isPaused) {
+                    setTimeout(handleContinuousInteraction, 3000); // 3-second delay
+                }
+            };
+
+            // Start speaking the text
+            window.speechSynthesis.speak(currentUtterance);
+        }
+    </script>
+</body>
+</html>
